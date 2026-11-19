@@ -29,6 +29,13 @@
 #define AXLE_LENGTH 0.052
 #define RANGE (1024 / 2)
 
+#define SEUIL_BAS 100     // ps2 en dessous : trop loin du mur
+#define SEUIL_HAUT 350    // ps2 au-dessus : trop près du mur
+#define VITESSE_BASE 3.0  // vitesse commune des deux roues (rad/s)
+#define DELTA 0.5         // écart de vitesse appliqué pour tourner
+
+#define SEUIL_AVANT 300   // ps1 au-dessus : obstacle devant
+
 static void compute_odometry(WbDeviceTag left_position_sensor, WbDeviceTag right_position_sensor) {
   double l = wb_position_sensor_get_value(left_position_sensor);
   double r = wb_position_sensor_get_value(right_position_sensor);
@@ -97,15 +104,33 @@ int main(int argc, char *argv[]) {
     /* get sensors values */
     for (i = 0; i < 8; i++)
       sensors_value[i] = wb_distance_sensor_get_value(distance_sensor[i]);
+
+    static int compteur = 0;   // mémorise sa valeur d'un pas à l'autre
+    if (++compteur % 8 == 0) { // on n'affiche qu'un pas sur 8
+      printf("ps1=%4.0f ps2=%4.0f ps3=%4.0f | ps4=%4.0f ps5=%4.0f ps6=%4.0f\n",
+             sensors_value[1], sensors_value[2], sensors_value[3],
+             sensors_value[4], sensors_value[5], sensors_value[6]);
+    }
+
     const double *a = wb_accelerometer_get_values(accelerometer);
-    printf("accelerometer values = %0.2f %0.2f %0.2f\n", a[0], a[1], a[2]);
+    /* printf("accelerometer values = %0.2f %0.2f %0.2f\n", a[0], a[1], a[2]); */
 
     /* compute odometry and speed values*/
-    compute_odometry(left_position_sensor, right_position_sensor);
-    for (i = 0; i < 2; i++) {
-      speed[i] = 0.0;
-      for (j = 0; j < 8; j++)
-        speed[i] += braitenberg_coefficients[j][i] * (1.0 - (sensors_value[j] / RANGE));
+    /* compute_odometry(left_position_sensor, right_position_sensor); */
+
+    /* suivi de mur à droite : ps2 pour la distance, ps1 pour les coins */
+    if (sensors_value[1] > SEUIL_AVANT) {    
+      speed[0] = -VITESSE_BASE;            
+      speed[1] = VITESSE_BASE;             
+    } else if (sensors_value[2] < SEUIL_BAS) {     
+      speed[0] = VITESSE_BASE + DELTA;     
+      speed[1] = VITESSE_BASE - DELTA;     
+    } else if (sensors_value[2] > SEUIL_HAUT) {   
+      speed[0] = VITESSE_BASE - DELTA;
+      speed[1] = VITESSE_BASE + DELTA;
+    } else {                                      
+      speed[0] = VITESSE_BASE;
+      speed[1] = VITESSE_BASE;
     }
 
     /* set speed values */
