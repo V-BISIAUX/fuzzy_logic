@@ -16,6 +16,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include <webots/accelerometer.h>
 #include <webots/camera.h>
@@ -34,12 +35,12 @@
 #define VITESSE_BASE 3.0  // vitesse commune des deux roues (rad/s)
 #define DELTA 0.5         // écart de vitesse appliqué pour tourner
 
-#define SEUIL_AVANT 300   // ps1
+#define SEUIL_AVANT 300   //ps1
 
 #define V_DROITE 0.5        // virage à droite
 #define V_DROIT 0.0         // tout droit
 #define V_GAUCHE -0.5       // virage à gauche
-#define V_GAUCHE_FORT -2.0  // virage fort à gauche (coin)
+#define V_GAUCHE_FORT -3.0  // virage fort à gauche (coin)
 
 #define V_RAPIDE 3.0
 #define V_MOYENNE 2.0
@@ -113,7 +114,7 @@ int main(int argc, char *argv[]) {
   wb_position_sensor_enable(left_position_sensor, time_step);
   wb_position_sensor_enable(right_position_sensor, time_step);
 
-  for (i = 0; i < 8; i++) { 
+  for (i = 0; i < 8; i++) {
     char device_name[4];
 
     /* get distance sensors */
@@ -127,43 +128,42 @@ int main(int argc, char *argv[]) {
     /* get sensors values */
     for (i = 0; i < 8; i++)
       sensors_value[i] = wb_distance_sensor_get_value(distance_sensor[i]);
-
+      
     static int compteur = 0;   // mémorise sa valeur d'un pas à l'autre
     if (++compteur % 8 == 0) { // on n'affiche qu'un pas sur 8
       printf("ps1=%4.0f ps2=%4.0f ps3=%4.0f | ps4=%4.0f ps5=%4.0f ps6=%4.0f\n",
              sensors_value[1], sensors_value[2], sensors_value[3],
              sensors_value[4], sensors_value[5], sensors_value[6]);
     }
-
+    
     const double *a = wb_accelerometer_get_values(accelerometer);
     /* printf("accelerometer values = %0.2f %0.2f %0.2f\n", a[0], a[1], a[2]); */
 
     /* compute odometry and speed values*/
     /* compute_odometry(left_position_sensor, right_position_sensor); */
 
-  
     double D = sensors_value[2];   // ps2
     double F = sensors_value[1];   // ps1
-
-    // fuzzification  
+    
+    /* fuzzification */
     double loin   = trapeze(D, 0, 0, 80, 150);
     double bon    = trapeze(D, 80, 150, 300, 400);
     double proche = trapeze(D, 300, 400, 10000, 10000);
-    double devant = trapeze(F, 110, 200, 10000, 10000);
-
-    // règles + défuzzification
+    double devant = trapeze(F, 150, 250, 10000, 10000);
+    
+    /* règles + défuzzification */
     double somme  = loin + bon + proche + devant;
     double virage = (loin * V_DROITE + bon * V_DROIT + proche * V_GAUCHE + devant * V_GAUCHE_FORT) / somme;
-
+                   
     /* règles de vitesse : ET = min, OU = max, NON = 1 - valeur */
     double w_lente   = devant;                                  // devant proche -> lente
     double w_rapide  = fmin(bon, 1.0 - devant);                 // bon ET NON devant -> rapide
     double w_moyenne = fmin(fmax(loin, proche), 1.0 - devant);  // (loin OU proche) ET NON devant -> moyenne
     double vitesse = (w_lente * V_LENTE + w_rapide * V_RAPIDE + w_moyenne * V_MOYENNE)/ (w_lente + w_rapide + w_moyenne);
-
+    
     speed[0] = vitesse + virage;
     speed[1] = vitesse - virage;
-
+    
     if (compteur % 8 == 0)
       printf("D=%4.0f F=%4.0f | loin=%.2f bon=%.2f proche=%.2f devant=%.2f -> virage=%.2f\n", D, F, loin, bon, proche, devant, virage);
     if (compteur % 8 == 0)
