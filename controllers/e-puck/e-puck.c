@@ -34,7 +34,12 @@
 #define VITESSE_BASE 3.0  // vitesse commune des deux roues (rad/s)
 #define DELTA 0.5         // écart de vitesse appliqué pour tourner
 
-#define SEUIL_AVANT 300   // ps1 au-dessus : obstacle devant
+#define SEUIL_AVANT 300   // ps1
+
+#define V_DROITE 0.5        // virage à droite
+#define V_DROIT 0.0         // tout droit
+#define V_GAUCHE -0.5       // virage à gauche
+#define V_GAUCHE_FORT -2.0  // virage fort à gauche (coin)
 
 static void compute_odometry(WbDeviceTag left_position_sensor, WbDeviceTag right_position_sensor) {
   double l = wb_position_sensor_get_value(left_position_sensor);
@@ -45,6 +50,20 @@ static void compute_odometry(WbDeviceTag left_position_sensor, WbDeviceTag right
   printf("estimated distance covered by left wheel: %g m.\n", dl);
   printf("estimated distance covered by right wheel: %g m.\n", dr);
   printf("estimated change of orientation: %g rad.\n", da);
+}
+
+static double trapeze(double x, double a, double b, double c, double d) {
+    if (x < a || x > d) {
+        return 0.0;  // cas hors du trapèze
+    }
+    if (x < b) {
+        return (x - a) / (b - a);  // cas côté qui monte
+    }
+    if (x <= c) {
+        return 1.0;  // cas plateau
+    }
+
+    return (d - x) / (d - c);  // cas côté qui descend
 }
 
 int main(int argc, char *argv[]) {
@@ -118,20 +137,26 @@ int main(int argc, char *argv[]) {
     /* compute odometry and speed values*/
     /* compute_odometry(left_position_sensor, right_position_sensor); */
 
-    /* suivi de mur à droite : ps2 pour la distance, ps1 pour les coins */
-    if (sensors_value[1] > SEUIL_AVANT) {    
-      speed[0] = -VITESSE_BASE;            
-      speed[1] = VITESSE_BASE;             
-    } else if (sensors_value[2] < SEUIL_BAS) {     
-      speed[0] = VITESSE_BASE + DELTA;     
-      speed[1] = VITESSE_BASE - DELTA;     
-    } else if (sensors_value[2] > SEUIL_HAUT) {   
-      speed[0] = VITESSE_BASE - DELTA;
-      speed[1] = VITESSE_BASE + DELTA;
-    } else {                                      
-      speed[0] = VITESSE_BASE;
-      speed[1] = VITESSE_BASE;
-    }
+  
+    double D = sensors_value[2];   // ps2
+    double F = sensors_value[1];   // ps1
+
+    // fuzzification 
+    double loin   = trapeze(D, 0, 0, 80, 150);
+    double bon    = trapeze(D, 80, 150, 300, 400);
+    double proche = trapeze(D, 300, 400, 10000, 10000);
+    double devant = trapeze(F, 110, 200, 10000, 10000);
+
+    // règles + défuzzification
+    double somme  = loin + bon + proche + devant;
+    double virage = (loin * V_DROITE + bon * V_DROIT + proche * V_GAUCHE + devant * V_GAUCHE_FORT) / somme;
+
+    speed[0] = VITESSE_BASE + virage;
+    speed[1] = VITESSE_BASE - virage;
+
+    if (compteur % 8 == 0)
+      printf("D=%4.0f F=%4.0f | loin=%.2f bon=%.2f proche=%.2f devant=%.2f -> virage=%.2f\n",
+             D, F, loin, bon, proche, devant, virage);
 
     /* set speed values */
     wb_motor_set_velocity(left_motor, speed[0]);
