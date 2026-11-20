@@ -41,6 +41,10 @@
 #define V_GAUCHE -0.5       // virage à gauche
 #define V_GAUCHE_FORT -2.0  // virage fort à gauche (coin)
 
+#define V_RAPIDE 3.0
+#define V_MOYENNE 2.0
+#define V_LENTE 0.5
+
 static void compute_odometry(WbDeviceTag left_position_sensor, WbDeviceTag right_position_sensor) {
   double l = wb_position_sensor_get_value(left_position_sensor);
   double r = wb_position_sensor_get_value(right_position_sensor);
@@ -109,7 +113,7 @@ int main(int argc, char *argv[]) {
   wb_position_sensor_enable(left_position_sensor, time_step);
   wb_position_sensor_enable(right_position_sensor, time_step);
 
-  for (i = 0; i < 8; i++) {
+  for (i = 0; i < 8; i++) { 
     char device_name[4];
 
     /* get distance sensors */
@@ -141,7 +145,7 @@ int main(int argc, char *argv[]) {
     double D = sensors_value[2];   // ps2
     double F = sensors_value[1];   // ps1
 
-    // fuzzification 
+    // fuzzification  
     double loin   = trapeze(D, 0, 0, 80, 150);
     double bon    = trapeze(D, 80, 150, 300, 400);
     double proche = trapeze(D, 300, 400, 10000, 10000);
@@ -151,12 +155,19 @@ int main(int argc, char *argv[]) {
     double somme  = loin + bon + proche + devant;
     double virage = (loin * V_DROITE + bon * V_DROIT + proche * V_GAUCHE + devant * V_GAUCHE_FORT) / somme;
 
-    speed[0] = VITESSE_BASE + virage;
-    speed[1] = VITESSE_BASE - virage;
+    /* règles de vitesse : ET = min, OU = max, NON = 1 - valeur */
+    double w_lente   = devant;                                  // devant proche -> lente
+    double w_rapide  = fmin(bon, 1.0 - devant);                 // bon ET NON devant -> rapide
+    double w_moyenne = fmin(fmax(loin, proche), 1.0 - devant);  // (loin OU proche) ET NON devant -> moyenne
+    double vitesse = (w_lente * V_LENTE + w_rapide * V_RAPIDE + w_moyenne * V_MOYENNE)/ (w_lente + w_rapide + w_moyenne);
+
+    speed[0] = vitesse + virage;
+    speed[1] = vitesse - virage;
 
     if (compteur % 8 == 0)
-      printf("D=%4.0f F=%4.0f | loin=%.2f bon=%.2f proche=%.2f devant=%.2f -> virage=%.2f\n",
-             D, F, loin, bon, proche, devant, virage);
+      printf("D=%4.0f F=%4.0f | loin=%.2f bon=%.2f proche=%.2f devant=%.2f -> virage=%.2f\n", D, F, loin, bon, proche, devant, virage);
+    if (compteur % 8 == 0)
+      printf("D=%4.0f F=%4.0f | virage=%.2f vitesse=%.2f\n", D, F, virage, vitesse);
 
     /* set speed values */
     wb_motor_set_velocity(left_motor, speed[0]);
