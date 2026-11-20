@@ -46,6 +46,8 @@
 #define V_MOYENNE 2.0
 #define V_LENTE 0.5
 
+#define COTE_MUR 1   // 1 = mur à droite, -1 = mur à gauche
+
 static void compute_odometry(WbDeviceTag left_position_sensor, WbDeviceTag right_position_sensor) {
   double l = wb_position_sensor_get_value(left_position_sensor);
   double r = wb_position_sensor_get_value(right_position_sensor);
@@ -142,8 +144,8 @@ int main(int argc, char *argv[]) {
     /* compute odometry and speed values*/
     /* compute_odometry(left_position_sensor, right_position_sensor); */
 
-    double D = sensors_value[2];   // ps2
-    double F = sensors_value[1];   // ps1
+    double D = (COTE_MUR == 1) ? sensors_value[2] : sensors_value[5];   // ps2 ou ps5
+    double F = (COTE_MUR == 1) ? sensors_value[1] : sensors_value[6];   // ps1 ou ps6
     
     /* fuzzification */
     double loin   = trapeze(D, 0, 0, 80, 150);
@@ -161,8 +163,8 @@ int main(int argc, char *argv[]) {
     double w_moyenne = fmin(fmax(loin, proche), 1.0 - devant);  // (loin OU proche) ET NON devant -> moyenne
     double vitesse = (w_lente * V_LENTE + w_rapide * V_RAPIDE + w_moyenne * V_MOYENNE)/ (w_lente + w_rapide + w_moyenne);
     
-    speed[0] = vitesse + virage;
-    speed[1] = vitesse - virage;
+    speed[0] = vitesse + COTE_MUR * virage;
+    speed[1] = vitesse - COTE_MUR * virage;
     
     if (compteur % 8 == 0)
       printf("D=%4.0f F=%4.0f | loin=%.2f bon=%.2f proche=%.2f devant=%.2f -> virage=%.2f\n", D, F, loin, bon, proche, devant, virage);
